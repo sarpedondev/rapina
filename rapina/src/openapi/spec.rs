@@ -292,6 +292,26 @@ pub fn build_openapi_spec(
             ..Default::default()
         };
 
+        // Add request body schema if present
+        if let Some(schema) = &route.request_schema {
+            let content_type = route
+                .request_content_type
+                .as_deref()
+                .unwrap_or("application/json");
+            let mut content = BTreeMap::new();
+            content.insert(
+                content_type.to_string(),
+                MediaType {
+                    schema: Schema::Inline(schema.clone()),
+                },
+            );
+            operation.request_body = Some(RequestBody {
+                description: None,
+                required: true,
+                content,
+            });
+        }
+
         operation
             .responses
             .insert("200".to_string(), success_response);
@@ -350,6 +370,8 @@ mod tests {
             "/users",
             "list_users",
             None,
+            None,
+            None::<String>,
             Vec::new(),
         )];
         let spec = build_openapi_spec("Test API", "1.0.0", &routes);
@@ -378,6 +400,8 @@ mod tests {
             "/users/:id",
             "get_user",
             None,
+            None,
+            None::<String>,
             errors,
         )];
         let spec = build_openapi_spec("Test API", "1.0.0", &routes);
@@ -453,6 +477,8 @@ mod tests {
             "/items",
             "create_item",
             Some(schema),
+            None,
+            None::<String>,
             Vec::new(),
         )];
         let spec = build_openapi_spec("Test API", "1.0.0", &routes);
@@ -474,12 +500,95 @@ mod tests {
     #[test]
     fn test_build_openapi_spec_skips_internal_routes() {
         let routes = vec![
-            RouteInfo::new("GET", "/__rapina/routes", "internal", None, Vec::new()),
-            RouteInfo::new("GET", "/users", "list_users", None, Vec::new()),
+            RouteInfo::new(
+                "GET",
+                "/__rapina/routes",
+                "internal",
+                None,
+                None,
+                None::<String>,
+                Vec::new(),
+            ),
+            RouteInfo::new(
+                "GET",
+                "/users",
+                "list_users",
+                None,
+                None,
+                None::<String>,
+                Vec::new(),
+            ),
         ];
         let spec = build_openapi_spec("Test API", "1.0.0", &routes);
 
         assert!(!spec.paths.contains_key("/__rapina/routes"));
         assert!(spec.paths.contains_key("/users"));
+    }
+
+    #[test]
+    fn test_build_openapi_spec_with_request_body() {
+        #[derive(schemars::JsonSchema)]
+        struct CreateUserRequest {
+            #[allow(dead_code)]
+            name: String,
+            #[allow(dead_code)]
+            email: String,
+        }
+        let request_schema = openapi_schema_for::<CreateUserRequest>();
+        let routes = vec![RouteInfo::new(
+            "POST",
+            "/users",
+            "create_user",
+            None,
+            Some(request_schema),
+            Some("application/json"),
+            Vec::new(),
+        )];
+        let spec = build_openapi_spec("Test API", "1.0.0", &routes);
+
+        let path = spec.paths.get("/users").unwrap();
+        let post_op = path.post.as_ref().unwrap();
+
+        // Should have requestBody
+        assert!(post_op.request_body.is_some());
+        let request_body = post_op.request_body.as_ref().unwrap();
+        assert!(request_body.required);
+        assert!(request_body.content.contains_key("application/json"));
+    }
+
+    #[test]
+    fn test_build_openapi_spec_with_form_request_body() {
+        #[derive(schemars::JsonSchema)]
+        struct LoginForm {
+            #[allow(dead_code)]
+            username: String,
+            #[allow(dead_code)]
+            password: String,
+        }
+        let request_schema = openapi_schema_for::<LoginForm>();
+        let routes = vec![RouteInfo::new(
+            "POST",
+            "/login",
+            "login",
+            None,
+            Some(request_schema),
+            Some("application/x-www-form-urlencoded"),
+            Vec::new(),
+        )];
+        let spec = build_openapi_spec("Test API", "1.0.0", &routes);
+
+        let path = spec.paths.get("/login").unwrap();
+        let post_op = path.post.as_ref().unwrap();
+
+        // Should have requestBody with form content type
+        assert!(post_op.request_body.is_some());
+        let request_body = post_op.request_body.as_ref().unwrap();
+        assert!(request_body.required);
+        assert!(
+            request_body
+                .content
+                .contains_key("application/x-www-form-urlencoded")
+        );
+        assert!(!request_body.content.contains_key("application/json"));
     }
 }

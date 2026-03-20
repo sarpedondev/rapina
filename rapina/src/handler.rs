@@ -27,6 +27,16 @@ pub trait Handler: Clone + Send + Sync + 'static {
         None
     }
 
+    /// JSON Schema for the request body (if available).
+    fn request_schema() -> Option<serde_json::Value> {
+        None
+    }
+
+    /// Content type for the request body (e.g., "application/json" or "application/x-www-form-urlencoded").
+    fn request_content_type() -> Option<&'static str> {
+        None
+    }
+
     /// Error variants for OpenAPI documentation.
     fn error_responses() -> Vec<ErrorVariant> {
         Vec::new()

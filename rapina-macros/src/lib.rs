@@ -213,6 +213,27 @@ fn route_macro_core(
         quote! {}
     };
 
+    // Extract request body type and content type for schema generation
+    let (request_schema_impl, request_content_type_impl) =
+        if let Some(meta) = extract_request_body_meta(&func.sig.inputs) {
+            let inner_type = meta.inner_type;
+            let content_type = meta.content_type;
+            (
+                quote! {
+                    fn request_schema() -> Option<serde_json::Value> {
+                        Some(rapina::openapi_schema_for::<#inner_type>())
+                    }
+                },
+                quote! {
+                    fn request_content_type() -> Option<&'static str> {
+                        Some(#content_type)
+                    }
+                },
+            )
+        } else {
+            (quote! {}, quote! {})
+        };
+
     let args: Vec<_> = func.sig.inputs.iter().collect();
 
     // Extract return type for type annotation (helps with type inference in async blocks)
@@ -340,6 +361,8 @@ fn route_macro_core(
             const NAME: &'static str = #func_name_str;
 
             #response_schema_impl
+            #request_schema_impl
+            #request_content_type_impl
             #error_responses_impl
 
             fn call(
@@ -366,6 +389,8 @@ fn route_macro_core(
                 handler_name: #func_name_str,
                 is_public: #is_public,
                 response_schema: <#func_name as rapina::handler::Handler>::response_schema,
+                request_schema: <#func_name as rapina::handler::Handler>::request_schema,
+                request_content_type: <#func_name as rapina::handler::Handler>::request_content_type,
                 error_responses: <#func_name as rapina::handler::Handler>::error_responses,
                 register: #register_fn_name,
             }
@@ -392,6 +417,63 @@ fn extract_json_inner_type(return_type: &syn::Type) -> Option<proc_macro2::Token
             && let Some(syn::GenericArgument::Type(ok_type)) = args.args.first()
         {
             return extract_json_inner_type(ok_type);
+        }
+    }
+    None
+}
+
+/// Extracts the request body metadata from handler function arguments.
+/// Supports Json<T>, Form<T>, Validated<Json<T>>, and Validated<Form<T>>.
+fn extract_request_body_meta(
+    inputs: &syn::punctuated::Punctuated<syn::FnArg, syn::Token![,]>,
+) -> Option<RequestBodyMeta> {
+    for arg in inputs.iter() {
+        if let syn::FnArg::Typed(pat_type) = arg {
+            if let Some(meta) = extract_body_inner_type(&pat_type.ty) {
+                return Some(meta);
+            }
+        }
+    }
+    None
+}
+
+/// Information about a request body extractor.
+struct RequestBodyMeta {
+    inner_type: proc_macro2::TokenStream,
+    content_type: &'static str,
+}
+
+/// Extracts the inner type and content type from Json<T>, Form<T>, or Validated<Json<T>>/Validated<Form<T>>.
+fn extract_body_inner_type(ty: &syn::Type) -> Option<RequestBodyMeta> {
+    if let syn::Type::Path(type_path) = ty
+        && let Some(last_segment) = type_path.path.segments.last()
+    {
+        // Direct Json<T>
+        if last_segment.ident == "Json"
+            && let syn::PathArguments::AngleBracketed(args) = &last_segment.arguments
+            && let Some(syn::GenericArgument::Type(inner_type)) = args.args.first()
+        {
+            return Some(RequestBodyMeta {
+                inner_type: quote!(#inner_type),
+                content_type: "application/json",
+            });
+        }
+        // Direct Form<T>
+        if last_segment.ident == "Form"
+            && let syn::PathArguments::AngleBracketed(args) = &last_segment.arguments
+            && let Some(syn::GenericArgument::Type(inner_type)) = args.args.first()
+        {
+            return Some(RequestBodyMeta {
+                inner_type: quote!(#inner_type),
+                content_type: "application/x-www-form-urlencoded",
+            });
+        }
+        // Validated<Json<T>> or Validated<Form<T>>
+        if last_segment.ident == "Validated"
+            && let syn::PathArguments::AngleBracketed(args) = &last_segment.arguments
+            && let Some(syn::GenericArgument::Type(inner_extractor)) = args.args.first()
+        {
+            return extract_body_inner_type(inner_extractor);
         }
     }
     None
@@ -922,6 +1004,102 @@ mod tests {
         assert!(output_str.contains("fn error_responses"));
         assert!(output_str.contains("DocumentedError"));
         assert!(output_str.contains("UserError"));
+    }
+
+    #[test]
+    fn test_json_body_generates_request_schema_and_content_type() {
+        let path = quote!("/users");
+        let input = quote! {
+            async fn create_user(body: Json<CreateUserRequest>) -> Json<UserResponse> {
+                Json(UserResponse { id: 1 })
+            }
+        };
+
+        let output = route_macro_core("POST", path, input);
+        let output_str = output.to_string();
+
+        // Check request_schema method is generated
+        assert!(output_str.contains("fn request_schema"));
+        assert!(output_str.contains("CreateUserRequest"));
+        // Check request_content_type method is generated with JSON content type
+        assert!(output_str.contains("fn request_content_type"));
+        assert!(output_str.contains("application/json"));
+    }
+
+    #[test]
+    fn test_form_body_generates_request_schema_and_content_type() {
+        let path = quote!("/users");
+        let input = quote! {
+            async fn create_user(body: Form<CreateUserForm>) -> Json<UserResponse> {
+                Json(UserResponse { id: 1 })
+            }
+        };
+
+        let output = route_macro_core("POST", path, input);
+        let output_str = output.to_string();
+
+        assert!(output_str.contains("fn request_schema"));
+        assert!(output_str.contains("CreateUserForm"));
+        // Check request_content_type method is generated with form content type
+        assert!(output_str.contains("fn request_content_type"));
+        assert!(output_str.contains("application/x-www-form-urlencoded"));
+    }
+
+    #[test]
+    fn test_validated_json_generates_request_schema_and_content_type() {
+        let path = quote!("/users");
+        let input = quote! {
+            async fn create_user(body: Validated<Json<CreateUserRequest>>) -> Json<UserResponse> {
+                Json(UserResponse { id: 1 })
+            }
+        };
+
+        let output = route_macro_core("POST", path, input);
+        let output_str = output.to_string();
+
+        // Should extract CreateUserRequest from Validated<Json<CreateUserRequest>>
+        assert!(output_str.contains("fn request_schema"));
+        assert!(output_str.contains("CreateUserRequest"));
+        // Should inherit JSON content type from inner Json extractor
+        assert!(output_str.contains("fn request_content_type"));
+        assert!(output_str.contains("application/json"));
+    }
+
+    #[test]
+    fn test_validated_form_generates_request_schema_and_content_type() {
+        let path = quote!("/login");
+        let input = quote! {
+            async fn login(body: Validated<Form<LoginForm>>) -> Json<TokenResponse> {
+                Json(TokenResponse { token: "abc".into() })
+            }
+        };
+
+        let output = route_macro_core("POST", path, input);
+        let output_str = output.to_string();
+
+        // Should extract LoginForm from Validated<Form<LoginForm>>
+        assert!(output_str.contains("fn request_schema"));
+        assert!(output_str.contains("LoginForm"));
+        // Should inherit form content type from inner Form extractor
+        assert!(output_str.contains("fn request_content_type"));
+        assert!(output_str.contains("application/x-www-form-urlencoded"));
+    }
+
+    #[test]
+    fn test_no_body_no_request_schema_or_content_type() {
+        let path = quote!("/users");
+        let input = quote! {
+            async fn list_users() -> Json<Vec<UserResponse>> {
+                Json(vec![])
+            }
+        };
+
+        let output = route_macro_core("GET", path, input);
+        let output_str = output.to_string();
+
+        // Should NOT generate request_schema or request_content_type for handlers without body
+        assert!(!output_str.contains("fn request_schema"));
+        assert!(!output_str.contains("fn request_content_type"));
     }
 
     #[test]
