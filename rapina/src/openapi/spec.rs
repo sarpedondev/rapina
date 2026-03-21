@@ -307,7 +307,7 @@ pub fn build_openapi_spec(
             );
             operation.request_body = Some(RequestBody {
                 description: None,
-                required: true,
+                required: route.request_body_required.unwrap_or(true),
                 content,
             });
         }
@@ -372,6 +372,7 @@ mod tests {
             None,
             None,
             None::<String>,
+            None,
             Vec::new(),
         )];
         let spec = build_openapi_spec("Test API", "1.0.0", &routes);
@@ -402,6 +403,7 @@ mod tests {
             None,
             None,
             None::<String>,
+            None,
             errors,
         )];
         let spec = build_openapi_spec("Test API", "1.0.0", &routes);
@@ -479,6 +481,7 @@ mod tests {
             Some(schema),
             None,
             None::<String>,
+            None,
             Vec::new(),
         )];
         let spec = build_openapi_spec("Test API", "1.0.0", &routes);
@@ -507,6 +510,7 @@ mod tests {
                 None,
                 None,
                 None::<String>,
+                None,
                 Vec::new(),
             ),
             RouteInfo::new(
@@ -516,6 +520,7 @@ mod tests {
                 None,
                 None,
                 None::<String>,
+                None,
                 Vec::new(),
             ),
         ];
@@ -542,6 +547,7 @@ mod tests {
             None,
             Some(request_schema),
             Some("application/json"),
+            Some(true),
             Vec::new(),
         )];
         let spec = build_openapi_spec("Test API", "1.0.0", &routes);
@@ -573,6 +579,7 @@ mod tests {
             None,
             Some(request_schema),
             Some("application/x-www-form-urlencoded"),
+            Some(true),
             Vec::new(),
         )];
         let spec = build_openapi_spec("Test API", "1.0.0", &routes);
@@ -590,5 +597,35 @@ mod tests {
                 .contains_key("application/x-www-form-urlencoded")
         );
         assert!(!request_body.content.contains_key("application/json"));
+    }
+
+    #[test]
+    fn test_build_openapi_spec_with_optional_request_body() {
+        #[derive(schemars::JsonSchema)]
+        struct UpdateUserRequest {
+            #[allow(dead_code)]
+            name: Option<String>,
+        }
+        let request_schema = openapi_schema_for::<UpdateUserRequest>();
+        let routes = vec![RouteInfo::new(
+            "PATCH",
+            "/users/:id",
+            "update_user",
+            None,
+            Some(request_schema),
+            Some("application/json"),
+            Some(false), // optional request body
+            Vec::new(),
+        )];
+        let spec = build_openapi_spec("Test API", "1.0.0", &routes);
+
+        let path = spec.paths.get("/users/{id}").unwrap();
+        let patch_op = path.patch.as_ref().unwrap();
+
+        // Should have requestBody with required: false
+        assert!(patch_op.request_body.is_some());
+        let request_body = patch_op.request_body.as_ref().unwrap();
+        assert!(!request_body.required);
+        assert!(request_body.content.contains_key("application/json"));
     }
 }

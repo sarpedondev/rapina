@@ -34,6 +34,8 @@ pub struct RouteConfig {
     pub request_schema: Option<serde_json::Value>,
     /// Content type for the request body.
     pub request_content_type: Option<&'static str>,
+    /// Whether the request body is required (true) or optional (false).
+    pub request_body_required: Option<bool>,
     /// Error responses this handler may return.
     pub error_responses: Vec<ErrorVariant>,
 }
@@ -45,6 +47,7 @@ impl Default for RouteConfig {
             response_schema: None,
             request_schema: None,
             request_content_type: None,
+            request_body_required: None,
             error_responses: Vec::new(),
         }
     }
@@ -56,6 +59,7 @@ pub(crate) struct Route {
     pub(crate) response_schema: Option<serde_json::Value>,
     pub(crate) request_schema: Option<serde_json::Value>,
     pub(crate) request_content_type: Option<&'static str>,
+    pub(crate) request_body_required: Option<bool>,
     pub(crate) error_responses: Vec<ErrorVariant>,
     handler: HandlerFn,
 }
@@ -134,6 +138,7 @@ impl Router {
             response_schema: config.response_schema,
             request_schema: config.request_schema,
             request_content_type: config.request_content_type,
+            request_body_required: config.request_body_required,
             error_responses: config.error_responses,
             handler,
         };
@@ -201,6 +206,7 @@ impl Router {
                 response_schema: H::response_schema(),
                 request_schema: H::request_schema(),
                 request_content_type: H::request_content_type(),
+                request_body_required: H::request_body_required(),
                 error_responses: H::error_responses(),
             },
             move |req, params, state| {
@@ -220,6 +226,7 @@ impl Router {
                 response_schema: H::response_schema(),
                 request_schema: H::request_schema(),
                 request_content_type: H::request_content_type(),
+                request_body_required: H::request_body_required(),
                 error_responses: H::error_responses(),
             },
             move |req, params, state| {
@@ -257,6 +264,7 @@ impl Router {
                 response_schema: H::response_schema(),
                 request_schema: H::request_schema(),
                 request_content_type: H::request_content_type(),
+                request_body_required: H::request_body_required(),
                 error_responses: H::error_responses(),
             },
             move |req, params, state| {
@@ -294,6 +302,7 @@ impl Router {
                 response_schema: H::response_schema(),
                 request_schema: H::request_schema(),
                 request_content_type: H::request_content_type(),
+                request_body_required: H::request_body_required(),
                 error_responses: H::error_responses(),
             },
             move |req, params, state| {
@@ -331,6 +340,7 @@ impl Router {
                 response_schema: H::response_schema(),
                 request_schema: H::request_schema(),
                 request_content_type: H::request_content_type(),
+                request_body_required: H::request_body_required(),
                 error_responses: H::error_responses(),
             },
             move |req, params, state| {
@@ -371,6 +381,7 @@ impl Router {
                     route.response_schema.clone(),
                     route.request_schema.clone(),
                     route.request_content_type,
+                    route.request_body_required,
                     route.error_responses.clone(),
                 )
             })

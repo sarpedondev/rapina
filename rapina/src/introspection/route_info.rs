@@ -14,7 +14,7 @@ use crate::error::ErrorVariant;
 /// ```
 /// use rapina::introspection::RouteInfo;
 ///
-/// let info = RouteInfo::new("GET", "/users/:id", "get_user", None, None, None::<String>, Vec::new());
+/// let info = RouteInfo::new("GET", "/users/:id", "get_user", None, None, None::<String>, None, Vec::new());
 /// assert_eq!(info.method, "GET");
 /// assert_eq!(info.path, "/users/:id");
 /// ```
@@ -35,6 +35,9 @@ pub struct RouteInfo {
     /// Content type for the request body (e.g., "application/json").
     #[serde(skip_serializing_if = "Option::is_none")]
     pub request_content_type: Option<String>,
+    /// Whether the request body is required (true) or optional (false).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_body_required: Option<bool>,
     /// Error variants for OpenAPI documentation.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub error_responses: Vec<ErrorVariant>,
@@ -42,6 +45,7 @@ pub struct RouteInfo {
 
 impl RouteInfo {
     /// Creates a new RouteInfo with the given metadata.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         method: impl Into<String>,
         path: impl Into<String>,
@@ -49,6 +53,7 @@ impl RouteInfo {
         response_schema: Option<serde_json::Value>,
         request_schema: Option<serde_json::Value>,
         request_content_type: Option<impl Into<String>>,
+        request_body_required: Option<bool>,
         error_responses: Vec<ErrorVariant>,
     ) -> Self {
         Self {
@@ -58,6 +63,7 @@ impl RouteInfo {
             response_schema,
             request_schema,
             request_content_type: request_content_type.map(|s| s.into()),
+            request_body_required,
             error_responses,
         }
     }
@@ -76,6 +82,7 @@ mod tests {
             None,
             None,
             None::<String>,
+            None,
             Vec::new(),
         );
         assert_eq!(info.method, "GET");
@@ -92,6 +99,7 @@ mod tests {
             None,
             None,
             None::<String>,
+            None,
             Vec::new(),
         );
         assert_eq!(info.path, "/users/:id");
@@ -106,6 +114,7 @@ mod tests {
             None,
             None,
             None::<String>,
+            None,
             Vec::new(),
         );
         let cloned = info.clone();
@@ -121,6 +130,7 @@ mod tests {
             None,
             None,
             None::<String>,
+            None,
             Vec::new(),
         );
         let json = serde_json::to_string(&info).unwrap();
@@ -138,6 +148,7 @@ mod tests {
             None,
             None,
             None::<String>,
+            None,
             Vec::new(),
         );
         let debug = format!("{:?}", info);
@@ -159,6 +170,7 @@ mod tests {
             None,
             None,
             None::<String>,
+            None,
             errors,
         );
         assert_eq!(info.error_responses.len(), 1);

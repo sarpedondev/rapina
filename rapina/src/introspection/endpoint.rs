@@ -90,6 +90,7 @@ mod tests {
                 None,
                 None,
                 None::<String>,
+                None,
                 Vec::new(),
             ),
             RouteInfo::new(
@@ -99,6 +100,7 @@ mod tests {
                 None,
                 None,
                 None::<String>,
+                None,
                 Vec::new(),
             ),
         ];
@@ -115,6 +117,7 @@ mod tests {
             None,
             None,
             None::<String>,
+            None,
             Vec::new(),
         )];
         let registry = RouteRegistry::with_routes(routes);
@@ -132,6 +135,7 @@ mod tests {
                 None,
                 None,
                 None::<String>,
+                None,
                 Vec::new(),
             ),
             RouteInfo::new(
@@ -141,6 +145,7 @@ mod tests {
                 None,
                 None,
                 None::<String>,
+                None,
                 Vec::new(),
             ),
         ];

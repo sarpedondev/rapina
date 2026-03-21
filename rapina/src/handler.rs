@@ -37,6 +37,12 @@ pub trait Handler: Clone + Send + Sync + 'static {
         None
     }
 
+    /// Whether the request body is required (true) or optional (false).
+    /// Returns None if there is no request body.
+    fn request_body_required() -> Option<bool> {
+        None
+    }
+
     /// Error variants for OpenAPI documentation.
     fn error_responses() -> Vec<ErrorVariant> {
         Vec::new()
